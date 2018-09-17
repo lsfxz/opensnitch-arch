@@ -1,0 +1,79 @@
+# Maintainer: evs-ch <evs-ch@users.noreply.github.com>
+pkgver=20180913.350_e9c10b9
+pkgrel=1
+pkgbase=opensnitch
+pkgname=("${pkgbase}d" "${pkgbase}-ui")
+arch=('i686' 'x86_64')
+license=('GPL')
+makedepends=('git' 'go-pie' 'dep' 'libpcap' 'protobuf'
+             'libnetfilter_queue' 'protobuf-go'
+             'python-setuptools' 'python-pip'
+             'python-grpcio' 'python-grpcio-tools'
+             'python-pyinotify' 'python-pyqt5'
+             'python-unicode-slugify')
+
+source=("opensnitch::git://github.com/evilsocket/opensnitch#branch=${BRANCH:-master}"
+        'nosudo.patch'
+        'pwuid.patch')
+
+md5sums=('SKIP'
+         'eb5a6c83c3816220799e678e32572705'
+         '03a48a1be821e80a64b7d392cc12db4b')
+
+pkgver() {
+        if [[ "$PKGVER" ]]; then
+                echo "$PKGVER"
+                return
+        fi
+
+        cd "$srcdir/$pkgbase"
+        local date=$(git log -1 --format="%cd" --date=short | sed s/-//g)
+        local count=$(git rev-list --count HEAD)
+        local commit=$(git rev-parse --short HEAD)
+        echo "$date.${count}_$commit"
+}
+
+build() {
+        cd "$srcdir/$pkgbase"
+
+        if [ -L "$srcdir/$pkgbase" ]; then
+                rm "$srcdir/$pkgbase" -rf
+                mv "$srcdir/.go/src/$pkgbase/" "$srcdir/$pkgbase"
+        fi
+
+        rm -rf "$srcdir/.go/src"
+        mkdir -p "$srcdir/.go/src"
+        export GOPATH="$srcdir/.go"
+        mv "$srcdir/$pkgbase" "$srcdir/.go/src/"
+
+        cd "$srcdir/.go/src/$pkgbase/"
+        ln -sf "$srcdir/.go/src/$pkgbase/" "$srcdir/$pkgbase"
+
+        cd "$GOPATH/src/opensnitch/daemon"
+        dep ensure
+        cd "$GOPATH/src/opensnitch"
+        patch -Np1 -i "${srcdir}/nosudo.patch"
+        patch -Np1 -i "${srcdir}/pwuid.patch"
+        make
+}
+
+package_opensnitchd() {
+        pkgdesc="A GNU/Linux port of the Little Snitch application firewall."
+        optdepends=('opensnitch-ui')
+
+        export GOPATH="$srcdir/.go"
+        cd "$GOPATH/src/opensnitch"
+        mkdir -p "${pkgdir}"/usr/lib/systemd/system
+        mkdir -p "${pkgdir}"/usr/bin
+        make DESTDIR="$pkgdir/" install
+}
+
+package_opensnitch-ui() {
+        pkgdesc="UI for opensnitch."
+        depends=('python-grpcio' 'python-grpcio-tools' 'python-pyinotify'
+                 'python-pyqt5' 'python-unicode-slugify' 'opensnitchd')
+
+        export GOPATH="$srcdir/.go"
+        cd "$GOPATH/src/opensnitch/ui"
+        pip install --isolated --root="$pkgdir" --ignore-installed --no-deps .
+}
